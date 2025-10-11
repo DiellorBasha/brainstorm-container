@@ -16,12 +16,10 @@ It provides an easy way to execute Brainstorm processing pipelines on servers, c
 * [System Requirements](#system-requirements)
 * [Repository Structure](#repository-structure)
 * [Installation Guide](#installation-guide)
-
   * [1. Prerequisites](#1-prerequisites)
   * [2. Prepare Installation Files](#2-prepare-installation-files)
   * [3. Build the Docker Image](#3-build-the-docker-image)
 * [Usage](#usage)
-
   * [Running Brainstorm Scripts](#running-brainstorm-scripts)
   * [Headless GUI Mode](#headless-gui-mode)
   * [Mounting Data Volumes](#mounting-data-volumes)
