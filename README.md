@@ -50,13 +50,13 @@ The container can be used for:
 
 ## 🚀 Features
 
-✅ Runs **compiled Brainstorm** binaries with full MATLAB Runtime support
-✅ Includes **MATLAB Runtime R2023a (9.14)** configured for Linux (`glnxa64`)
-✅ Supports **headless execution** via `xvfb-run` for GUI-linked operations
-✅ Configurable **volumes** for data and script sharing
-✅ Lightweight Ubuntu 22.04 base image with all required system dependencies
-✅ Compatible with Brainstorm scripting workflows (`-script` mode)
-✅ Ready for deployment on **servers**, **HPC clusters**, or **cloud** platforms
+- Runs **compiled Brainstorm** binaries with full MATLAB Runtime support
+- Includes **MATLAB Runtime R2023a (9.14)** configured for Linux (`glnxa64`)
+- Supports **headless execution** via `xvfb-run` for GUI-linked operations
+- Configurable **volumes** for data and script sharing
+- Lightweight Ubuntu 22.04 base image with all required system dependencies
+- Compatible with Brainstorm scripting workflows (`-script` mode)
+- Ready for deployment on **servers**, **HPC clusters**, or **cloud** platforms
 
 ---
 
