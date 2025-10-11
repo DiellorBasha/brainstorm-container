@@ -1,11 +1,11 @@
-# brainstorm-container
-
 # Brainstorm Compiled Docker Container
 
 Run the **compiled version of [Brainstorm](https://neuroimage.usc.edu/brainstorm)** in a fully isolated and reproducible environment using **Docker**.
 This container is designed for **headless (non-interactive)** execution of Brainstorm pipelines and scripts, powered by the **MATLAB Runtime R2023a (9.14)**.
 
 It provides an easy way to execute Brainstorm processing pipelines on servers, clusters, or cloud environments **without requiring a MATLAB license**.
+
+This implementation follows the [Brainstorm scripting tutorial](https://neuroimage.usc.edu/brainstorm/Tutorials/Scripting) and [installation documentation](https://neuroimage.usc.edu/brainstorm/Installation) for compiled/standalone versions.
 
 ---
 
@@ -115,16 +115,20 @@ Before building, download the following files and place them in the repository r
 
 ---
 
-### 2️ Prepare Installation Files
+### 2️⃣ Prepare Installation Files
 
 Ensure both downloaded archives are in your build context (same folder as the Dockerfile):
 
 ```
-brainstorm-compiled-docker/
+brainstorm-container/
 ├── MATLAB_Runtime_R2023a_glnxa64.zip
 ├── brainstorm3_standalone_x86_64.zip
-└── Dockerfile
+├── Dockerfile
+├── entrypoint.sh
+└── docker-compose.yaml
 ```
+
+**Important**: The Brainstorm compiled binary currently targets MATLAB Runtime 2023a. Ensure version compatibility.
 
 ---
 
@@ -141,9 +145,10 @@ docker build \
 
 This will:
 
-* Install MATLAB Runtime to `/opt/mcr/v914`
-* Install Brainstorm to `/opt/brainstorm`
-* Configure all required environment variables
+* Install MATLAB Runtime R2023a (9.14) to `/opt/mcr/v914` using [silent installation](https://www.mathworks.com/help/compiler/install-the-matlab-runtime.html)
+* Install Brainstorm compiled binaries to `/opt/brainstorm`
+* Configure all required environment variables and library paths per MathWorks guidance
+* Set up headless execution environment with xvfb-run
 
 ---
 
@@ -151,8 +156,8 @@ This will:
 
 ### Running Brainstorm Scripts
 
-You can execute Brainstorm `.m` scripts in headless mode using the `-script` flag.
-Example (assuming your scripts and database folders are in the current directory):
+Execute Brainstorm `.m` scripts in headless mode using the `-script` flag.
+Scripts should be generated following the [Brainstorm "Generate .m script" tutorial](https://neuroimage.usc.edu/brainstorm/Tutorials/Scripting).
 
 ```bash
 docker run --rm \
@@ -162,14 +167,13 @@ docker run --rm \
   -script /scripts/bst_pipeline.m
 ```
 
-This runs the script `/scripts/bst_pipeline.m` using the compiled Brainstorm engine.
-Refer to the [Brainstorm Scripting Tutorial](https://neuroimage.usc.edu/brainstorm/Tutorials/Scripting) for generating `.m` scripts from GUI pipelines.
+This executes the script using `xvfb-run -a /opt/brainstorm/run_brainstorm.sh ${MCR_ROOT} -script /scripts/bst_pipeline.m` internally.
 
 ---
 
 ### Headless GUI Mode
 
-If you need to run Brainstorm with its GUI (e.g., for debugging), use `xvfb-run`:
+Run Brainstorm with its GUI in headless mode for debugging or interactive use:
 
 ```bash
 docker run --rm -it \
@@ -177,7 +181,7 @@ docker run --rm -it \
   brainstorm-compiled:2023a
 ```
 
-This launches Brainstorm in a **virtual X display** without requiring a graphical desktop.
+This launches Brainstorm using [xvfb-run](https://www.commandmasters.com/commands/xvfb-run-linux/) in a **virtual X display** without requiring a graphical desktop.
 
 ---
 
@@ -224,6 +228,16 @@ docker run --rm \
 docker run --rm brainstorm-compiled:2023a --help
 ```
 
+**Using Docker Compose:**
+
+```bash
+# Run with docker-compose (requires docker-compose.yaml)
+docker-compose run brainstorm -script /scripts/bst_pipeline.m
+
+# Build and run
+docker-compose up --build
+```
+
 ---
 
 ## ⚙️ Environment Variables
@@ -239,14 +253,20 @@ docker run --rm brainstorm-compiled:2023a --help
 
 ## 🧩 Troubleshooting
 
-**🛑 Error:** “libXrender.so.1: cannot open shared object file”
-→ Ensure all required X libraries are installed in the container (these are preinstalled).
+**🛑 Error:** "libXrender.so.1: cannot open shared object file"
+→ Verify LD_LIBRARY_PATH includes all required MATLAB Runtime subfolders for R2023a as per [MathWorks documentation](https://www.mathworks.com/help/compiler/install-the-matlab-runtime.html).
 
-**🛑 Error:** “MCR not found or version mismatch”
-→ Verify the compiled Brainstorm version matches MATLAB Runtime R2023a (9.14).
+**🛑 Error:** "MCR not found or version mismatch"
+→ Ensure the compiled Brainstorm version matches MATLAB Runtime R2023a (9.14). Check [system requirements](https://www.mathworks.com/support/requirements/previous-releases.html).
 
-**🛑 Error:** “Permission denied writing to cache”
-→ Ensure `/tmp/mcr_cache` and `/data` directories are writable (`chmod 777` as needed).
+**🛑 Error:** "Permission denied writing to cache"
+→ Ensure `/tmp/mcr_cache` and `/data` directories are writable. Container runs as non-root `brainstorm` user.
+
+**🛑 GUI-dependent operations fail**
+→ All GUI operations run via [xvfb-run](https://www.commandmasters.com/commands/xvfb-run-linux/) in headless environments.
+
+**🛑 Script execution issues**
+→ Ensure your scripts follow [Brainstorm's scripting patterns](https://neuroimage.usc.edu/brainstorm/Tutorials/Scripting) (Process1/Process2, Generate .m script, etc.).
 
 **🛑 Slow startup**
 → The MATLAB Runtime initializes on first run; subsequent runs are faster.

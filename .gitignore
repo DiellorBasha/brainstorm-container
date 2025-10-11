@@ -1,0 +1,39 @@
+# Brainstorm Container .gitignore
+
+# MATLAB Runtime and Brainstorm installer archives (large files)
+MATLAB_Runtime_R2023a_glnxa64.zip
+MATLAB_Runtime_R2023a_glnxa64.tar.gz
+brainstorm3_standalone_x86_64.zip
+brainstorm3_standalone_x86_64.tar.gz
+*.zip
+*.tar.gz
+
+# Docker build context temporary files
+.dockerignore
+
+# User data directories (should be mounted at runtime)
+data/*
+!data/README.md
+
+# Compiled MATLAB cache files
+*.mex*
+*.p
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log

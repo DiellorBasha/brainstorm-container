@@ -1,0 +1,37 @@
+# Docker Compose configuration for Brainstorm Compiled Container
+# Provides convenient volume mounting and environment setup
+# Usage: docker-compose run brainstorm -script /scripts/my_pipeline.m
+
+version: '3.8'
+
+services:
+  brainstorm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MCR_INSTALLER: MATLAB_Runtime_R2023a_glnxa64.zip
+        BST_ARCHIVE: brainstorm3_standalone_x86_64.zip
+    image: brainstorm-compiled:2023a
+    
+    # Environment variables
+    environment:
+      - MCR_CACHE_ROOT=/tmp/mcr_cache
+    
+    # Volume mappings
+    volumes:
+      - ./data:/data              # Brainstorm databases and project data
+      - ./scripts:/scripts        # User MATLAB pipeline scripts
+      
+    # Working directory
+    working_dir: /workspace
+    
+    # Default command (can be overridden)
+    command: ["--help"]
+    
+    # Container runs as non-root user
+    user: "1000:1000"
+    
+    # Remove container after execution
+    stdin_open: true
+    tty: true
