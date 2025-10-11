@@ -1,6 +1,6 @@
 # brainstorm-container
 
-# 🧠 Brainstorm Compiled Docker Container
+# Brainstorm Compiled Docker Container
 
 Run the **compiled version of [Brainstorm](https://neuroimage.usc.edu/brainstorm)** in a fully isolated and reproducible environment using **Docker**.
 This container is designed for **headless (non-interactive)** execution of Brainstorm pipelines and scripts, powered by the **MATLAB Runtime R2023a (9.14)**.
@@ -91,7 +91,7 @@ brainstorm-compiled-docker/
 
 ## ⚙️ Installation Guide
 
-### 1️⃣ Prerequisites
+### 1️ Prerequisites
 
 Before building, download the following files and place them in the repository root:
 
@@ -115,7 +115,7 @@ Before building, download the following files and place them in the repository r
 
 ---
 
-### 2️⃣ Prepare Installation Files
+### 2️ Prepare Installation Files
 
 Ensure both downloaded archives are in your build context (same folder as the Dockerfile):
 
@@ -128,7 +128,7 @@ brainstorm-compiled-docker/
 
 ---
 
-### 3️⃣ Build the Docker Image
+### 3️ Build the Docker Image
 
 Run the following command to build the container:
 
