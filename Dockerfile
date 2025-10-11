@@ -71,7 +71,7 @@ RUN groupadd -r brainstorm --gid=1000 && \
 ENV MCR_ROOT=/opt/mcr/v914
 ENV MCR_CACHE_ROOT=/tmp/mcr_cache
 ENV LD_LIBRARY_PATH=${MCR_ROOT}/runtime/glnxa64:${MCR_ROOT}/bin/glnxa64:${MCR_ROOT}/sys/os/glnxa64:${MCR_ROOT}/sys/opengl/lib/glnxa64:${LD_LIBRARY_PATH}
-ENV BRAINSTORM_ROOT=/opt/brainstorm
+ENV BRAINSTORM_ROOT=/opt/brainstorm3
 
 # Copy installer files from build context
 COPY ${MCR_INSTALLER} /tmp/
@@ -87,8 +87,9 @@ RUN cd /tmp && \
 # Install Brainstorm compiled application
 # Based on Brainstorm standalone installation guidance
 RUN cd /tmp && \
-    unzip -q ${BST_ARCHIVE} -d /opt/brainstorm && \
-    chmod +x /opt/brainstorm/run_brainstorm.sh && \
+    unzip -q ${BST_ARCHIVE} -d /opt && \
+    chmod +x /opt/brainstorm3/bin/R2023a/brainstorm3.command && \
+    ln -s /opt/brainstorm3 /opt/brainstorm && \
     rm -rf /tmp/${BST_ARCHIVE}
 
 # Create required directories and set permissions
@@ -114,7 +115,7 @@ USER brainstorm
 
 # Health check - verify Brainstorm can show help
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD /opt/brainstorm/run_brainstorm.sh ${MCR_ROOT} -help > /dev/null 2>&1 || exit 1
+    CMD timeout 30 xvfb-run -a /opt/brainstorm3/bin/R2023a/brainstorm3.command ${MCR_ROOT} --help > /dev/null 2>&1 || exit 1
 
 # Set entrypoint and default command
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

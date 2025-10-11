@@ -19,7 +19,7 @@ mkdir -p /data /tmp/mcr_cache /scripts
 chmod 755 /data /tmp/mcr_cache /scripts 2>/dev/null || true
 
 # Brainstorm executable path
-BST_RUNNER="${BRAINSTORM_ROOT}/run_brainstorm.sh"
+BST_RUNNER="/opt/brainstorm3/bin/R2023a/brainstorm3.command"
 
 # Check if Brainstorm runner exists
 if [[ ! -f "${BST_RUNNER}" ]]; then
@@ -40,8 +40,8 @@ show_usage() {
     echo "  Headless GUI mode (debugging):"
     echo "    docker run -it -v \$PWD/data:/data brainstorm-compiled:2023a"
     echo ""
-    echo "  Custom arguments:"
-    echo "    docker run -v \$PWD/data:/data brainstorm-compiled:2023a -script /scripts/job.m --db /data --protocol TutorialIntroduction"
+    echo "  With additional parameters:"
+    echo "    docker run -v \$PWD/data:/data brainstorm-compiled:2023a -script /scripts/job.m local"
     echo ""
     echo "Volume requirements:"
     echo "  /data    - Mount your Brainstorm databases and project data"
@@ -60,7 +60,7 @@ fi
 # Detect execution mode and prepare command
 if [[ "$1" == "-script" ]]; then
     # Script mode: Run MATLAB script headlessly
-    # Pattern: xvfb-run -a /opt/brainstorm/run_brainstorm.sh ${MCR_ROOT} -script /scripts/pipeline.m [additional args]
+    # Pattern: xvfb-run -a brainstorm3.command ${MCR_ROOT} script.m [additional args]
     echo "Running Brainstorm in script mode..."
     if [[ -z "$2" ]]; then
         echo "ERROR: -script requires a script file path"
@@ -76,6 +76,8 @@ if [[ "$1" == "-script" ]]; then
     fi
     
     echo "Executing script: $script_file"
+    # Remove -script from args and pass the rest to brainstorm3.command
+    shift  # Remove -script
     exec xvfb-run -a "${BST_RUNNER}" "${MCR_ROOT}" "$@"
     
 else
