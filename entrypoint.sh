@@ -60,7 +60,7 @@ fi
 # Detect execution mode and prepare command
 if [[ "$1" == "-script" ]]; then
     # Script mode: Run MATLAB script headlessly
-    # Pattern: xvfb-run -a brainstorm3.command ${MCR_ROOT} script.m [additional args]
+    # Pattern: brainstorm3.command <MATLABROOT> <script.m> <parameters>
     echo "Running Brainstorm in script mode..."
     if [[ -z "$2" ]]; then
         echo "ERROR: -script requires a script file path"
@@ -76,13 +76,19 @@ if [[ "$1" == "-script" ]]; then
     fi
     
     echo "Executing script: $script_file"
-    # Remove -script from args and pass the rest to brainstorm3.command
+    # Correct Brainstorm pattern: brainstorm3.command <MATLABROOT> <script.m> <parameters>
     shift  # Remove -script
     exec xvfb-run -a "${BST_RUNNER}" "${MCR_ROOT}" "$@"
     
 else
-    # Direct mode: Pass all arguments to Brainstorm
-    # This handles GUI mode and any other Brainstorm command-line options
+    # Direct mode: Start Brainstorm GUI or with custom arguments
+    # Pattern: brainstorm3.command <MATLABROOT> [arguments]
     echo "Running Brainstorm with arguments: $*"
-    exec xvfb-run -a "${BST_RUNNER}" "${MCR_ROOT}" "$@"
+    if [[ $# -eq 0 ]]; then
+        # No arguments = start GUI mode
+        exec xvfb-run -a "${BST_RUNNER}" "${MCR_ROOT}"
+    else
+        # Pass arguments directly to Brainstorm
+        exec xvfb-run -a "${BST_RUNNER}" "${MCR_ROOT}" "$@"
+    fi
 fi

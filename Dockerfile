@@ -70,6 +70,7 @@ RUN groupadd -r brainstorm --gid=1000 && \
 # Following MathWorks guidance for R2023a (9.14) path configuration
 ENV MCR_ROOT=/opt/mcr/v914
 ENV MCR_CACHE_ROOT=/tmp/mcr_cache
+ENV LD_LIBRARY_PATH=""
 ENV LD_LIBRARY_PATH=${MCR_ROOT}/runtime/glnxa64:${MCR_ROOT}/bin/glnxa64:${MCR_ROOT}/sys/os/glnxa64:${MCR_ROOT}/sys/opengl/lib/glnxa64:${LD_LIBRARY_PATH}
 ENV BRAINSTORM_ROOT=/opt/brainstorm3
 
