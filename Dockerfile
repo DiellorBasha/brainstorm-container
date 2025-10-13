@@ -68,7 +68,7 @@ RUN groupadd -r brainstorm --gid=1000 && \
 
 # Set MATLAB Runtime environment variables
 # Following MathWorks guidance for R2023a (9.14) path configuration
-ENV MCR_ROOT=/opt/mcr/v914
+ENV MCR_ROOT=/opt/mcr/R2023a
 ENV MCR_CACHE_ROOT=/tmp/mcr_cache
 ENV LD_LIBRARY_PATH=""
 ENV LD_LIBRARY_PATH=${MCR_ROOT}/runtime/glnxa64:${MCR_ROOT}/bin/glnxa64:${MCR_ROOT}/sys/os/glnxa64:${MCR_ROOT}/sys/opengl/lib/glnxa64:${LD_LIBRARY_PATH}
@@ -90,6 +90,8 @@ RUN cd /tmp && \
 RUN cd /tmp && \
     unzip -q ${BST_ARCHIVE} -d /opt && \
     chmod +x /opt/brainstorm3/bin/R2023a/brainstorm3.command && \
+    chmod 644 /opt/brainstorm3/bin/R2023a/brainstorm3.jar && \
+    chown -R brainstorm:brainstorm /opt/brainstorm3 && \
     ln -s /opt/brainstorm3 /opt/brainstorm && \
     rm -rf /tmp/${BST_ARCHIVE}
 
@@ -98,8 +100,9 @@ RUN cd /tmp && \
 # /scripts: User MATLAB scripts for pipeline automation
 # /workspace: Working directory
 # /tmp/mcr_cache: MATLAB Runtime cache
-RUN mkdir -p /data /scripts /workspace /tmp/mcr_cache && \
-    chown -R brainstorm:brainstorm /data /scripts /workspace /tmp/mcr_cache
+# /home/brainstorm/.brainstorm: Default Brainstorm database location
+RUN mkdir -p /data /scripts /workspace /tmp/mcr_cache /home/brainstorm/.brainstorm && \
+    chown -R brainstorm:brainstorm /data /scripts /workspace /tmp/mcr_cache /home/brainstorm
 
 # Define volumes for data and scripts
 VOLUME ["/data", "/scripts"]
@@ -116,7 +119,7 @@ USER brainstorm
 
 # Health check - verify Brainstorm can show help
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD timeout 30 xvfb-run -a /opt/brainstorm3/bin/R2023a/brainstorm3.command ${MCR_ROOT} --help > /dev/null 2>&1 || exit 1
+    CMD timeout 30 xvfb-run -a /opt/brainstorm3/bin/R2023a/brainstorm3.command /opt/mcr/R2023a --help > /dev/null 2>&1 || exit 1
 
 # Set entrypoint and default command
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

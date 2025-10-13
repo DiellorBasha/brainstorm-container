@@ -18,8 +18,9 @@ export BRAINSTORM_ROOT=${BRAINSTORM_ROOT:-/opt/brainstorm}
 mkdir -p /data /tmp/mcr_cache /scripts
 chmod 755 /data /tmp/mcr_cache /scripts 2>/dev/null || true
 
-# Brainstorm executable path
-BST_RUNNER="/opt/brainstorm3/bin/R2023a/brainstorm3.command"
+# Brainstorm executable path and directory
+BST_DIR="/opt/brainstorm3/bin/R2023a"
+BST_RUNNER="${BST_DIR}/brainstorm3.command"
 
 # Check if Brainstorm runner exists
 if [[ ! -f "${BST_RUNNER}" ]]; then
@@ -76,19 +77,30 @@ if [[ "$1" == "-script" ]]; then
     fi
     
     echo "Executing script: $script_file"
-    # Correct Brainstorm pattern: brainstorm3.command <MATLABROOT> <script.m> <parameters>
+    # Change to Brainstorm R2023a directory (matching your working setup)
+    cd /opt/brainstorm3/bin/R2023a
+    
+    # Correct Brainstorm pattern: ./brainstorm3.command <MATLABROOT> <script.m> <parameters>
     shift  # Remove -script
-    exec xvfb-run -a "${BST_RUNNER}" "${MCR_ROOT}" "$@"
+    echo "Running: ./brainstorm3.command ${MCR_ROOT} $*"
+    # Handle first-time update prompt by answering 'yes' automatically
+    echo "yes" | xvfb-run -a ./brainstorm3.command "${MCR_ROOT}" "$@"
     
 else
     # Direct mode: Start Brainstorm GUI or with custom arguments
-    # Pattern: brainstorm3.command <MATLABROOT> [arguments]
+    # Pattern: ./brainstorm3.command <MATLABROOT> [arguments]
     echo "Running Brainstorm with arguments: $*"
+    
+    # Change to Brainstorm R2023a directory (matching your working setup)
+    cd /opt/brainstorm3/bin/R2023a
+    
     if [[ $# -eq 0 ]]; then
-        # No arguments = start GUI mode
-        exec xvfb-run -a "${BST_RUNNER}" "${MCR_ROOT}"
+        # No arguments = start server mode
+        echo "Running: ./brainstorm3.command ${MCR_ROOT} brainstorm server"
+        echo "yes" | xvfb-run -a ./brainstorm3.command "${MCR_ROOT}" brainstorm server
     else
         # Pass arguments directly to Brainstorm
-        exec xvfb-run -a "${BST_RUNNER}" "${MCR_ROOT}" "$@"
+        echo "Running: ./brainstorm3.command ${MCR_ROOT} $*"
+        echo "yes" | xvfb-run -a ./brainstorm3.command "${MCR_ROOT}" "$@"
     fi
 fi
