@@ -1,0 +1,81 @@
+# Alpine-based Dockerfile (experimental - may need compatibility adjustments)
+FROM alpine:3.18
+
+ARG MCR_INSTALLER=MATLAB_Runtime_R2023a_glnxa64.zip
+ARG BST_ARCHIVE=brainstorm3_standalone_x86_64.zip
+
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Install glibc compatibility layer and required packages
+RUN apk add --no-cache \
+    bash \
+    ca-certificates \
+    unzip \
+    gcompat \
+    libstdc++ \
+    fontconfig \
+    freetype \
+    libx11 \
+    libxext \
+    libxt \
+    libxrender \
+    libxi \
+    libxtst \
+    glib \
+    alsa-lib \
+    xvfb \
+    gtk+3.0 \
+    cairo \
+    pango \
+    && rm -rf /var/cache/apk/*
+
+# Install glibc (required for MATLAB Runtime)
+RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub && \
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.34-r0/glibc-2.34-r0.apk && \
+    apk add --no-cache --force-overwrite glibc-2.34-r0.apk && \
+    rm glibc-2.34-r0.apk
+
+# Create user
+RUN addgroup -g 1000 brainstorm && \
+    adduser -D -s /bin/bash -u 1000 -G brainstorm brainstorm
+
+# Copy and install components (same as minimal version)
+COPY ${MCR_INSTALLER} /tmp/
+COPY ${BST_ARCHIVE} /tmp/
+
+# Install MATLAB Runtime with Alpine compatibility
+RUN cd /tmp && \
+    unzip -q ${MCR_INSTALLER} && \
+    ./install -mode silent -agreeToLicense yes -destinationFolder /opt/mcr && \
+    # Cleanup (same as minimal version)
+    rm -rf /opt/mcr/R2023a/toolbox/compiler_sdk/pysdk_py* \
+           /opt/mcr/R2023a/toolbox/compiler/java \
+           /opt/mcr/R2023a/help \
+    && rm -rf /tmp/install /tmp/${MCR_INSTALLER} /tmp/_temp_matlab_*
+
+# Install Brainstorm
+RUN cd /tmp && \
+    unzip -q ${BST_ARCHIVE} -d /opt && \
+    chmod +x /opt/brainstorm3/bin/R2023a/brainstorm3.command && \
+    chmod 644 /opt/brainstorm3/bin/R2023a/brainstorm3.jar && \
+    chown -R brainstorm:brainstorm /opt/brainstorm3 && \
+    rm -rf /tmp/${BST_ARCHIVE}
+
+RUN mkdir -p /home/brainstorm /data /scripts /workspace /tmp/mcr_cache /home/brainstorm/.brainstorm && \
+    chown -R brainstorm:brainstorm /home/brainstorm /data /scripts /workspace /tmp/mcr_cache
+
+ENV MCR_ROOT=/opt/mcr/R2023a
+ENV MCR_CACHE_ROOT=/tmp/mcr_cache
+ENV LD_LIBRARY_PATH=${MCR_ROOT}/runtime/glnxa64:${MCR_ROOT}/bin/glnxa64:${MCR_ROOT}/sys/os/glnxa64:${MCR_ROOT}/sys/opengl/lib/glnxa64
+ENV BRAINSTORM_ROOT=/opt/brainstorm3
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+VOLUME ["/data", "/scripts"]
+WORKDIR /workspace
+USER brainstorm
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["--help"]

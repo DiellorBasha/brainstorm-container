@@ -89,6 +89,27 @@ brainstorm-compiled-docker/
 
 ---
 
+## 🚀 Quick Start (Pre-built Container)
+
+### Option 1: Use Pre-built Container (Recommended)
+
+```bash
+# Pull the pre-built container
+docker pull diellorbasha/brainstorm-compiled:2023a
+
+# Test it works
+docker run --rm diellorbasha/brainstorm-compiled:2023a --help
+
+# Run with your scripts
+docker run --rm \
+  -v $PWD/data:/data \
+  -v $PWD/scripts:/scripts \
+  diellorbasha/brainstorm-compiled:2023a \
+  -script /scripts/my_pipeline.m
+```
+
+### Option 2: Build from Source
+
 ## ⚙️ Installation Guide
 
 ### 1️ Prerequisites

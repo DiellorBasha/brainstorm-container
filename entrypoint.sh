@@ -44,6 +44,8 @@ show_usage() {
     echo "  With additional parameters:"
     echo "    docker run -v \$PWD/data:/data brainstorm-compiled:2023a -script /scripts/job.m local"
     echo ""
+    echo "Note: The 'local' argument is automatically added if not present to avoid database setup prompts"
+    echo ""
     echo "Volume requirements:"
     echo "  /data    - Mount your Brainstorm databases and project data"
     echo "  /scripts - Mount your .m script files generated from Brainstorm GUI"
@@ -82,6 +84,21 @@ if [[ "$1" == "-script" ]]; then
     
     # Correct Brainstorm pattern: ./brainstorm3.command <MATLABROOT> <script.m> <parameters>
     shift  # Remove -script
+    
+    # Check if 'local' argument is already present, if not add it automatically
+    local_found=false
+    for arg in "$@"; do
+        if [[ "$arg" == "local" ]]; then
+            local_found=true
+            break
+        fi
+    done
+    
+    if [[ "$local_found" == false ]]; then
+        echo "Adding 'local' argument to avoid database setup prompt"
+        set -- "$@" "local"
+    fi
+    
     echo "Running: ./brainstorm3.command ${MCR_ROOT} $*"
     # Handle first-time update prompt by answering 'yes' automatically
     echo "yes" | xvfb-run -a ./brainstorm3.command "${MCR_ROOT}" "$@"
@@ -94,10 +111,24 @@ else
     # Change to Brainstorm R2023a directory (matching your working setup)
     cd /opt/brainstorm3/bin/R2023a
     
-    if [[ $# -eq 0 ]]; then
-        # No arguments = start server mode
-        echo "Running: ./brainstorm3.command ${MCR_ROOT} brainstorm server"
-        echo "yes" | xvfb-run -a ./brainstorm3.command "${MCR_ROOT}" brainstorm server
+    # Check if 'local' argument is already present, if not add it automatically
+    local_found=false
+    for arg in "$@"; do
+        if [[ "$arg" == "local" ]]; then
+            local_found=true
+            break
+        fi
+    done
+    
+    if [[ "$local_found" == false ]]; then
+        echo "Adding 'local' argument to avoid database setup prompt"
+        set -- "$@" "local"
+    fi
+    
+    if [[ $# -eq 1 ]] && [[ "$1" == "local" ]]; then
+        # Only 'local' argument = start server mode with local database
+        echo "Running: ./brainstorm3.command ${MCR_ROOT} brainstorm server local"
+        echo "yes" | xvfb-run -a ./brainstorm3.command "${MCR_ROOT}" brainstorm server local
     else
         # Pass arguments directly to Brainstorm
         echo "Running: ./brainstorm3.command ${MCR_ROOT} $*"

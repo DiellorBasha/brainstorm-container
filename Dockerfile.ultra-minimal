@@ -1,0 +1,133 @@
+# Ultra-optimized Dockerfile for Brainstorm with only Signal Processing & Parallel Processing toolboxes
+# This removes all unnecessary MATLAB Runtime toolboxes to minimize container size
+FROM ubuntu:22.04
+
+ARG MCR_INSTALLER=MATLAB_Runtime_R2023a_glnxa64.zip
+ARG BST_ARCHIVE=brainstorm3_standalone_x86_64.zip
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Install minimal required packages for Brainstorm + Signal Processing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    unzip \
+    fontconfig \
+    libfreetype6 \
+    libx11-6 \
+    libxext6 \
+    libxt6 \
+    libxrender1 \
+    libxi6 \
+    libxtst6 \
+    libglib2.0-0 \
+    libasound2 \
+    xvfb \
+    libxkbcommon0 \
+    libxrandr2 \
+    libgtk-3-0 \
+    libgdk-pixbuf2.0-0 \
+    libcairo2 \
+    libpango-1.0-0 \
+    libfftw3-3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user
+RUN groupadd -r brainstorm --gid=1000 && \
+    useradd -r -g brainstorm --uid=1000 --home-dir=/home/brainstorm --shell=/bin/bash brainstorm
+
+# Install MATLAB Runtime with aggressive toolbox cleanup
+COPY ${MCR_INSTALLER} /tmp/
+RUN cd /tmp && \
+    unzip -q ${MCR_INSTALLER} && \
+    ./install -mode silent -agreeToLicense yes -destinationFolder /opt/mcr && \
+    echo "Cleaning MATLAB Runtime - keeping only Signal Processing & Parallel Processing..." && \
+    # Remove ALL toolboxes except signal and parallel
+    cd /opt/mcr/R2023a/toolbox && \
+    find . -maxdepth 1 -type d ! -name "." ! -name "signal" ! -name "parallel" ! -name "shared" ! -name "matlab" -exec rm -rf {} + 2>/dev/null || true && \
+    # Remove compiler SDK components (keep only essential)
+    rm -rf /opt/mcr/R2023a/toolbox/compiler_sdk/pysdk_* \
+           /opt/mcr/R2023a/toolbox/compiler_sdk/java \
+           /opt/mcr/R2023a/toolbox/compiler/java \
+    && \
+    # Remove Java GUI components (keep core Java runtime)
+    rm -rf /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/desktop \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/deploy \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/javaws \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/plugin \
+    && \
+    # Remove documentation and help
+    rm -rf /opt/mcr/R2023a/help \
+           /opt/mcr/R2023a/patents.txt \
+           /opt/mcr/R2023a/readme.txt \
+           /opt/mcr/R2023a/version.txt \
+    && \
+    # Remove unnecessary fonts (keep minimal set)
+    find /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/fonts -name "*.ttf" -not -name "*Sans*" -not -name "*Mono*" -delete 2>/dev/null || true && \
+    # Remove example and demo files
+    find /opt/mcr/R2023a -name "*example*" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/mcr/R2023a -name "*demo*" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    # Remove unused binaries and libraries in sys/os
+    cd /opt/mcr/R2023a/sys/os/glnxa64 && \
+    rm -rf libmwmfl* libmwfl* 2>/dev/null || true && \
+    # Clean up installation files
+    rm -rf /tmp/install /tmp/${MCR_INSTALLER} /tmp/_temp_matlab_* /tmp/*.log
+
+# Install Brainstorm with selective cleanup
+COPY ${BST_ARCHIVE} /tmp/
+RUN cd /tmp && \
+    unzip -q ${BST_ARCHIVE} -d /opt && \
+    chmod +x /opt/brainstorm3/bin/R2023a/brainstorm3.command && \
+    chmod 644 /opt/brainstorm3/bin/R2023a/brainstorm3.jar && \
+    echo "Optimizing Brainstorm installation..." && \
+    # Remove documentation (keep essentials)
+    rm -rf /opt/brainstorm3/doc/tutorials \
+           /opt/brainstorm3/doc/license.html \
+    && \
+    # Remove default anatomy templates (can be downloaded if needed)
+    rm -rf /opt/brainstorm3/defaults/anatomy/* 2>/dev/null || true && \
+    # Remove some default EEG templates (keep essential ones)
+    find /opt/brainstorm3/defaults/eeg -name "*10-*" -delete 2>/dev/null || true && \
+    # Remove backup and temporary files
+    find /opt/brainstorm3 -name "*.bak" -delete 2>/dev/null || true && \
+    find /opt/brainstorm3 -name "*~" -delete 2>/dev/null || true && \
+    # Set ownership
+    chown -R brainstorm:brainstorm /opt/brainstorm3 && \
+    # Clean up
+    rm -rf /tmp/${BST_ARCHIVE}
+
+# Verify essential toolboxes are present
+RUN echo "Verifying required toolboxes..." && \
+    ls -la /opt/mcr/R2023a/toolbox/ && \
+    test -d "/opt/mcr/R2023a/toolbox/signal" || (echo "ERROR: Signal Processing toolbox missing!" && exit 1) && \
+    test -d "/opt/mcr/R2023a/toolbox/parallel" || (echo "ERROR: Parallel Processing toolbox missing!" && exit 1) && \
+    echo "✅ Required toolboxes verified!"
+
+# Create directories and set environment
+RUN mkdir -p /home/brainstorm /data /scripts /workspace /tmp/mcr_cache /home/brainstorm/.brainstorm && \
+    chown -R brainstorm:brainstorm /home/brainstorm /data /scripts /workspace /tmp/mcr_cache
+
+# Set MATLAB Runtime environment (optimized library path)
+ENV MCR_ROOT=/opt/mcr/R2023a
+ENV MCR_CACHE_ROOT=/tmp/mcr_cache
+ENV LD_LIBRARY_PATH=${MCR_ROOT}/runtime/glnxa64:${MCR_ROOT}/bin/glnxa64:${MCR_ROOT}/sys/os/glnxa64:${MCR_ROOT}/sys/opengl/lib/glnxa64
+ENV BRAINSTORM_ROOT=/opt/brainstorm3
+
+# Copy entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+VOLUME ["/data", "/scripts"]
+WORKDIR /workspace
+USER brainstorm
+
+# Lightweight health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD timeout 15 xvfb-run -a /opt/brainstorm3/bin/R2023a/brainstorm3.command /opt/mcr/R2023a --help > /dev/null 2>&1 || exit 1
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["--help"]

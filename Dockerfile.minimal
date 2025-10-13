@@ -1,0 +1,95 @@
+# Dockerfile with MATLAB Runtime cleanup for size optimization
+FROM ubuntu:22.04
+
+ARG MCR_INSTALLER=MATLAB_Runtime_R2023a_glnxa64.zip
+ARG BST_ARCHIVE=brainstorm3_standalone_x86_64.zip
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Install minimal required packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    unzip \
+    fontconfig \
+    libfreetype6 \
+    libx11-6 \
+    libxext6 \
+    libxt6 \
+    libxrender1 \
+    libxi6 \
+    libxtst6 \
+    libglib2.0-0 \
+    libasound2 \
+    xvfb \
+    libxkbcommon0 \
+    libxrandr2 \
+    libgtk-3-0 \
+    libgdk-pixbuf2.0-0 \
+    libcairo2 \
+    libpango-1.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create user
+RUN groupadd -r brainstorm --gid=1000 && \
+    useradd -r -g brainstorm --uid=1000 --home-dir=/home/brainstorm --shell=/bin/bash brainstorm
+
+# Copy and install MATLAB Runtime with cleanup
+COPY ${MCR_INSTALLER} /tmp/
+RUN cd /tmp && \
+    unzip -q ${MCR_INSTALLER} && \
+    ./install -mode silent -agreeToLicense yes -destinationFolder /opt/mcr && \
+    # Remove unnecessary MATLAB Runtime components
+    rm -rf /opt/mcr/R2023a/toolbox/compiler_sdk/pysdk_py* \
+           /opt/mcr/R2023a/toolbox/compiler/java \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/desktop \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/deploy \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/javaws \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/plugin \
+           /opt/mcr/R2023a/help \
+           /opt/mcr/R2023a/patents.txt \
+           /opt/mcr/R2023a/readme.txt \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/fonts/LucidaBrightDemiBold.ttf \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/fonts/LucidaBrightDemiItalic.ttf \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/fonts/LucidaBrightItalic.ttf \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/fonts/LucidaSansDemiBold.ttf \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/fonts/LucidaTypewriterBold.ttf \
+           /opt/mcr/R2023a/sys/java/jre/glnxa64/jre/lib/fonts/LucidaTypewriterRegular.ttf && \
+    # Clean up installation files
+    rm -rf /tmp/install /tmp/${MCR_INSTALLER} /tmp/_temp_matlab_*
+
+# Copy and install Brainstorm
+COPY ${BST_ARCHIVE} /tmp/
+RUN cd /tmp && \
+    unzip -q ${BST_ARCHIVE} -d /opt && \
+    chmod +x /opt/brainstorm3/bin/R2023a/brainstorm3.command && \
+    chmod 644 /opt/brainstorm3/bin/R2023a/brainstorm3.jar && \
+    # Remove unnecessary Brainstorm components (be careful here)
+    rm -rf /opt/brainstorm3/doc \
+           /opt/brainstorm3/defaults/anatomy \
+           /opt/brainstorm3/defaults/templates \
+    && chown -R brainstorm:brainstorm /opt/brainstorm3 && \
+    rm -rf /tmp/${BST_ARCHIVE}
+
+# Create directories and set environment
+RUN mkdir -p /home/brainstorm /data /scripts /workspace /tmp/mcr_cache /home/brainstorm/.brainstorm && \
+    chown -R brainstorm:brainstorm /home/brainstorm /data /scripts /workspace /tmp/mcr_cache
+
+ENV MCR_ROOT=/opt/mcr/R2023a
+ENV MCR_CACHE_ROOT=/tmp/mcr_cache
+ENV LD_LIBRARY_PATH=${MCR_ROOT}/runtime/glnxa64:${MCR_ROOT}/bin/glnxa64:${MCR_ROOT}/sys/os/glnxa64:${MCR_ROOT}/sys/opengl/lib/glnxa64
+ENV BRAINSTORM_ROOT=/opt/brainstorm3
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+VOLUME ["/data", "/scripts"]
+WORKDIR /workspace
+USER brainstorm
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["--help"]
