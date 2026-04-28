@@ -134,11 +134,19 @@ start_xvfb() {
 run_matlab() {
     local matlab_code="$1"
     start_xvfb
-    echo "─── MATLAB command ───"
-    echo "$matlab_code"
-    echo "───────────────────────"
 
-    "${MATLAB_BIN}" -nodisplay -nosplash -nodesktop -batch "$matlab_code"
+    # Write MATLAB code to a temp .m file (avoids shell quoting issues with -batch)
+    local tmp_script="/tmp/bst_run_$$.m"
+    printf '%s\n' "$matlab_code" > "$tmp_script"
+
+    echo "─── MATLAB script: ${tmp_script} ───"
+    cat "$tmp_script"
+    echo "─────────────────────────────────────"
+
+    "${MATLAB_BIN}" -nodisplay -nosplash -nodesktop -batch "run('${tmp_script}')"
+    local exit_code=$?
+    rm -f "$tmp_script"
+    return $exit_code
 }
 
 # ─── Participant mode ────────────────────────────────────────────────────────
@@ -209,15 +217,7 @@ run_participant() {
     echo "═══════════════════════════════════════════════════════════════════"
 
     # Build MATLAB command
-    local matlab_code="
-addpath('${use_bst_dir}');
-addpath('${SCRIPTS_DIR}');
-bst_single_subject('${bids_dir}', '${output_dir}', '${participant_label}', '${module}', ...
-    'BstDir', '${use_bst_dir}', ...
-    'BstDbDir', '${bst_db_dir}', ...
-    'NVertices', ${nvertices});
-exit(0);
-"
+    local matlab_code="addpath('${use_bst_dir}'); addpath('${SCRIPTS_DIR}'); bst_single_subject('${bids_dir}', '${output_dir}', '${participant_label}', '${module}', 'BstDir', '${use_bst_dir}', 'BstDbDir', '${bst_db_dir}', 'NVertices', ${nvertices});"
     run_matlab "$matlab_code"
     local exit_code=$?
 
@@ -289,15 +289,7 @@ run_aggregate() {
         output_arg="'OutputZip', '${output_zip}', "
     fi
 
-    local matlab_code="
-addpath('${use_bst_dir}');
-addpath('${SCRIPTS_DIR}');
-bst_aggregate_subjects('${zip_dir}', '${protocol_name}', ...
-    'BstDir', '${use_bst_dir}', ...
-    'BstDbDir', '${bst_db_dir}', ...
-    ${output_arg});
-exit(0);
-"
+    local matlab_code="addpath('${use_bst_dir}'); addpath('${SCRIPTS_DIR}'); bst_aggregate_subjects('${zip_dir}', '${protocol_name}', 'BstDir', '${use_bst_dir}', 'BstDbDir', '${bst_db_dir}', ${output_arg});"
     run_matlab "$matlab_code"
     local exit_code=$?
 
