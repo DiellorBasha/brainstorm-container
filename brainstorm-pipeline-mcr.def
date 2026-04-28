@@ -1,0 +1,205 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%labels
+    Author Diellor Basha <diellorbasha@gmail.com>
+    Version 1.0.0-mcr
+    Description Brainstorm MEG/EEG BIDS App — Self-Contained (MCR)
+    org.opencontainers.image.source https://github.com/DiellorBasha/brainstorm-container
+
+%help
+    Brainstorm BIDS App — Self-Contained MCR Version (Version B)
+
+    This container bundles everything needed to run the Brainstorm MEG/EEG
+    pipeline WITHOUT any external MATLAB dependency:
+      - Compiled standalone binaries (bst_single_subject, bst_aggregate_subjects)
+      - MATLAB Compiler Runtime R2023b
+      - Brainstorm3 source tree (for templates like ICBM152)
+
+    No 'module load matlab' required. No /cvmfs binding needed. Fully portable.
+
+    Usage:
+      # Single subject (identical CLI to Version A)
+      apptainer run --writable-tmpfs \
+          --bind /data:/data:ro --bind /output:/output \
+          brainstorm-pipeline-mcr.sif \
+          /data /output participant --participant-label 0002 --module timefreq
+
+      # Aggregate per-subject exports into group protocol
+      apptainer run --writable-tmpfs \
+          --bind /output:/output \
+          brainstorm-pipeline-mcr.sif \
+          aggregate --zip-dir /output --protocol-name MyGroup
+
+    See entrypoint-mcr.sh --help for full argument reference.
+
+    Size: ~2-4 GB (MCR adds ~3 GB over Version A's 153 MB)
+    Tradeoff: Larger container, zero external dependencies.
+
+%environment
+    # MCR installation path
+    export MCR_ROOT=/opt/mcr/R2023b
+    # Compiled binaries
+    export COMPILED_DIR=/opt/brainstorm-pipeline/compiled
+    # Brainstorm source tree (for templates, defaults)
+    export BST_DIR=/opt/brainstorm3
+    # Pipeline directory
+    export PIPELINE_DIR=/opt/brainstorm-pipeline
+    # Headless display
+    export DISPLAY=:99
+    # Locale
+    export LANG=C.UTF-8
+    export LC_ALL=C.UTF-8
+    # MCR cache (writable-tmpfs makes /tmp writable)
+    export MCR_CACHE_ROOT=/tmp/mcr_cache
+    # Suppress MCR phone-home
+    export MW_DIAGNOSTIC_DEST=console
+
+%files
+    # Entrypoint for MCR version
+    entrypoint-mcr.sh /opt/brainstorm-pipeline/entrypoint-mcr.sh
+    # Pipeline scripts (still needed for reference, not executed directly)
+    scripts /opt/brainstorm-pipeline/scripts
+    # Bugfix patches
+    patches /opt/brainstorm-pipeline/patches
+    # Pre-compiled standalone binaries (built by build-mcr.sh step 1)
+    # These are placed in staging/compiled/ before container build
+    staging/compiled /opt/brainstorm-pipeline/compiled
+
+%post
+    # ── System packages ──────────────────────────────────────────────────
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        git \
+        unzip \
+        xvfb \
+        xauth \
+        libx11-6 \
+        libxext6 \
+        libxmu6 \
+        libxpm4 \
+        libxt6 \
+        libxrender1 \
+        libxi6 \
+        libxtst6 \
+        libxss1 \
+        libglib2.0-0 \
+        libasound2 \
+        libnss3 \
+        libxkbcommon0 \
+        libxrandr2 \
+        libxcursor1 \
+        libxinerama1 \
+        libxdamage1 \
+        libxcomposite1 \
+        libxfixes3 \
+        libgtk-3-0 \
+        libgdk-pixbuf2.0-0 \
+        libcairo2 \
+        libpango-1.0-0 \
+        libatk1.0-0 \
+        libdrm2 \
+        fontconfig \
+        libfreetype6 \
+        mesa-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+    # ── Install MCR R2023b ───────────────────────────────────────────────
+    # MCR zip must be pre-staged at staging/mcr/MATLAB_Runtime_R2023b_glnxa64.zip
+    # (or downloaded during build if network is available)
+    MCR_ZIP="/opt/brainstorm-pipeline/compiled/MATLAB_Runtime_R2023b_glnxa64.zip"
+    MCR_INSTALL_DIR="/opt/mcr"
+
+    if [ -f "$MCR_ZIP" ]; then
+        echo "Installing MCR from pre-staged zip..."
+        mkdir -p /tmp/mcr_install
+        unzip -q "$MCR_ZIP" -d /tmp/mcr_install
+        /tmp/mcr_install/install -mode silent -agreeToLicense yes -destinationFolder "$MCR_INSTALL_DIR"
+        rm -rf /tmp/mcr_install "$MCR_ZIP"
+    else
+        echo "ERROR: MCR zip not found at $MCR_ZIP"
+        echo "Download from: https://ssd.mathworks.com/supportfiles/downloads/R2023b/Release/2/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2023b_Update_2_glnxa64.zip"
+        echo "Place in staging/compiled/ before building."
+        exit 1
+    fi
+
+    # Verify MCR installed correctly
+    MCR_ROOT="/opt/mcr/R2023b"
+    if [ ! -d "$MCR_ROOT/runtime" ]; then
+        # MCR sometimes installs into a versioned subdirectory
+        # Try to find it
+        MCR_FOUND=$(find /opt/mcr -name "runtime" -type d 2>/dev/null | head -1)
+        if [ -n "$MCR_FOUND" ]; then
+            MCR_ROOT=$(dirname "$MCR_FOUND")
+            echo "MCR installed at: $MCR_ROOT"
+        else
+            echo "ERROR: MCR installation failed — runtime directory not found"
+            ls -la /opt/mcr/ 2>/dev/null || true
+            exit 1
+        fi
+    fi
+    echo "MCR R2023b installed at: $MCR_ROOT"
+    du -sh "$MCR_ROOT"
+
+    # ── Clone Brainstorm source tree ─────────────────────────────────────
+    # Needed at runtime for ICBM152 templates, default channel files, etc.
+    # The compiled standalone references these paths.
+    cd /opt
+    git clone --depth 1 https://github.com/brainstorm-tools/brainstorm3.git
+    cd brainstorm3
+    echo "Brainstorm cloned: $(git log --oneline -1)"
+
+    # Download brainstorm.jar (may still be needed for Java utilities)
+    mkdir -p /opt/brainstorm3/java
+    curl -sL -o /opt/brainstorm3/java/brainstorm.jar \
+        https://github.com/brainstorm-tools/bst-java/raw/master/brainstorm/dist/brainstorm.jar
+    ls -lh /opt/brainstorm3/java/brainstorm.jar
+
+    # ── Apply bugfix: process_import_bids.m ──────────────────────────────
+    # Even though the compiled standalone can't be patched, the source tree
+    # IS available and Brainstorm may reference it at runtime for some ops.
+    BIDS_FILE="/opt/brainstorm3/toolbox/process/functions/process_import_bids.m"
+    if [ -f /opt/brainstorm-pipeline/patches/process_import_bids.patch ]; then
+        echo "Applying process_import_bids patch..."
+        cd /opt/brainstorm3
+        patch -p1 < /opt/brainstorm-pipeline/patches/process_import_bids.patch \
+            && echo "Patch applied successfully" \
+            || echo "WARNING: Patch failed — applying sed fallback"
+    fi
+    sed -i 's/if isempty(iRaw)/if isempty(iRawEmpty)/' "$BIDS_FILE" 2>/dev/null || true
+    sed -i 's/RawFiles{iRaw}/RawFiles{iRawEmpty}/' "$BIDS_FILE" 2>/dev/null || true
+    echo "Bugfix verification:"
+    grep -n "iRawEmpty" "$BIDS_FILE" | head -5
+
+    # ── Permissions ──────────────────────────────────────────────────────
+    chmod +x /opt/brainstorm-pipeline/entrypoint-mcr.sh
+    chmod +x /opt/brainstorm-pipeline/compiled/bst_single_subject_standalone 2>/dev/null || true
+    chmod +x /opt/brainstorm-pipeline/compiled/bst_aggregate_subjects_standalone 2>/dev/null || true
+    chmod -R a+rX /opt/brainstorm3
+    chmod -R a+rX /opt/brainstorm-pipeline
+
+    # ── Create runtime directories ───────────────────────────────────────
+    mkdir -p /data /output /scratch /tmp/mcr_cache
+    chmod 1777 /tmp /scratch
+
+    # ── Cleanup ──────────────────────────────────────────────────────────
+    # Remove .git from brainstorm3 (saves ~50 MB)
+    rm -rf /opt/brainstorm3/.git
+
+%runscript
+    exec /opt/brainstorm-pipeline/entrypoint-mcr.sh "$@"
+
+%test
+    # Verify Brainstorm source tree exists (for templates)
+    test -f /opt/brainstorm3/brainstorm.m || exit 1
+    # Verify compiled binaries exist
+    test -x /opt/brainstorm-pipeline/compiled/bst_single_subject_standalone || exit 1
+    test -x /opt/brainstorm-pipeline/compiled/bst_aggregate_subjects_standalone || exit 1
+    # Verify MCR is installed
+    test -d /opt/mcr || exit 1
+    # Verify entrypoint
+    test -x /opt/brainstorm-pipeline/entrypoint-mcr.sh || exit 1
+    echo "All MCR container tests passed."
