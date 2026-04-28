@@ -80,30 +80,44 @@ EOF
 
 # ─── Detect MATLAB ───────────────────────────────────────────────────────────
 find_matlab() {
-    # Check if matlab is already in PATH (from module load)
-    if command -v matlab &>/dev/null; then
-        MATLAB_BIN=$(command -v matlab)
-        echo "Found MATLAB: ${MATLAB_BIN}"
+    # 1. Check MATLAB_BIN env var (explicit override — preferred for containers)
+    if [[ -n "${MATLAB_BIN:-}" ]] && [[ -x "${MATLAB_BIN}" ]]; then
+        echo "Found MATLAB (MATLAB_BIN): ${MATLAB_BIN}"
         return 0
     fi
 
-    # Check common Alliance paths
+    # 2. Check MATLAB_ROOT env var (set by some module systems)
+    if [[ -n "${MATLAB_ROOT:-}" ]] && [[ -x "${MATLAB_ROOT}/bin/matlab" ]]; then
+        MATLAB_BIN="${MATLAB_ROOT}/bin/matlab"
+        echo "Found MATLAB (MATLAB_ROOT): ${MATLAB_BIN}"
+        return 0
+    fi
+
+    # 3. Check if matlab is in PATH
+    if command -v matlab &>/dev/null; then
+        MATLAB_BIN=$(command -v matlab)
+        echo "Found MATLAB (PATH): ${MATLAB_BIN}"
+        return 0
+    fi
+
+    # 4. Scan common Alliance/HPC CVMFS paths
     local search_paths=(
         "/cvmfs/restricted.computecanada.ca/easybuild/software/2023/x86-64-v3/Core/matlab/2023b.2/bin/matlab"
+        "/cvmfs/restricted.computecanada.ca/easybuild/software/2020/Core/matlab/2023b/bin/matlab"
         "/usr/local/MATLAB/R2023b/bin/matlab"
         "/opt/matlab/R2023b/bin/matlab"
     )
     for p in "${search_paths[@]}"; do
         if [[ -x "$p" ]]; then
             MATLAB_BIN="$p"
-            echo "Found MATLAB at: ${MATLAB_BIN}"
+            echo "Found MATLAB (CVMFS): ${MATLAB_BIN}"
             return 0
         fi
     done
 
-    echo "ERROR: MATLAB not found. On Alliance HPC, run:"
-    echo "  module load matlab/2023b.2"
-    echo "before invoking the container."
+    echo "ERROR: MATLAB not found. Pass it via environment variable:"
+    echo "  apptainer run --env MATLAB_BIN=/path/to/matlab container.sif ..."
+    echo "  Or on Alliance: module load matlab/2023b.2 && apptainer run --env PATH=\$PATH ..."
     return 1
 }
 

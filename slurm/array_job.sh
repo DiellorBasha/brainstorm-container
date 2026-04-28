@@ -65,12 +65,16 @@ echo "Running container: ${CONTAINER}"
 echo "SLURM_TMPDIR: ${SLURM_TMPDIR}"
 echo ""
 
+MATLAB_BIN=$(which matlab)
 apptainer run \
     --cleanenv \
     --env "SLURM_TMPDIR=${SLURM_TMPDIR}" \
+    --env "MATLAB_BIN=${MATLAB_BIN}" \
+    --env "MLM_LICENSE_FILE=${MLM_LICENSE_FILE:-}" \
     --bind "${BIDS_DIR}:/data:ro" \
     --bind "${OUTPUT_DIR}:/output" \
     --bind "${SLURM_TMPDIR}:/scratch" \
+    --bind "/cvmfs:/cvmfs:ro" \
     "${CONTAINER}" \
     /data /output participant \
     --participant-label "${SUBJECT}" \

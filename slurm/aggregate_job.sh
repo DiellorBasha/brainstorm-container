@@ -51,11 +51,15 @@ echo ""
 echo "Running aggregate..."
 echo ""
 
+MATLAB_BIN=$(which matlab)
 apptainer run \
     --cleanenv \
     --env "SLURM_TMPDIR=${SLURM_TMPDIR}" \
+    --env "MATLAB_BIN=${MATLAB_BIN}" \
+    --env "MLM_LICENSE_FILE=${MLM_LICENSE_FILE:-}" \
     --bind "${OUTPUT_DIR}:/output" \
     --bind "${SLURM_TMPDIR}:/scratch" \
+    --bind "/cvmfs:/cvmfs:ro" \
     "${CONTAINER}" \
     aggregate \
     --zip-dir /output \
