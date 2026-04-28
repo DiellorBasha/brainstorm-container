@@ -55,6 +55,7 @@ From: ubuntu:22.04
     apt-get update && apt-get install -y --no-install-recommends \
         bash \
         ca-certificates \
+        curl \
         git \
         unzip \
         xvfb \
@@ -96,6 +97,13 @@ From: ubuntu:22.04
     git clone --depth 1 https://github.com/brainstorm-tools/brainstorm3.git
     cd brainstorm3
     echo "Brainstorm cloned: $(git log --oneline -1)"
+
+    # Download brainstorm.jar (required at runtime, container is read-only)
+    mkdir -p /opt/brainstorm3/java
+    echo "Downloading brainstorm.jar..."
+    curl -sL -o /opt/brainstorm3/java/brainstorm.jar \
+        https://github.com/brainstorm-tools/bst-java/raw/master/brainstorm/dist/brainstorm.jar
+    ls -lh /opt/brainstorm3/java/brainstorm.jar
 
     # ── Apply bugfix: process_import_bids.m ──────────────────────────────
     # Fix 1: iRaw → iRawEmpty on line ~1233 (empty-room variable name typo)
