@@ -43,9 +43,9 @@ From: ubuntu:22.04
 
 %files
     # Pipeline scripts (bst_single_subject.m, bst_aggregate_subjects.m, etc.)
-    scripts/ /opt/brainstorm-pipeline/scripts/
+    scripts /opt/brainstorm-pipeline/scripts
     # Bugfix patches applied during %post
-    patches/ /opt/brainstorm-pipeline/patches/
+    patches /opt/brainstorm-pipeline/patches
     # Entrypoint
     entrypoint.sh /opt/brainstorm-pipeline/entrypoint.sh
 
