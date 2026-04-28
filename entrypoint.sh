@@ -1,137 +1,324 @@
 #!/bin/bash
-# Entrypoint script for Brainstorm Compiled Container
-# Supports both scripting mode (-script) and headless GUI execution
+# =============================================================================
+# Brainstorm BIDS App — Entrypoint
+# =============================================================================
+# Implements the BIDS App CLI standard for single-subject MEG/EEG processing.
+#
+# Modes:
+#   participant  — Run per-subject pipeline (import → preprocess → source → timefreq)
+#   aggregate    — Combine per-subject .zip exports into a group protocol
+#
+# Requires MATLAB on the host (Alliance: module load matlab/2023b.2).
+# Brainstorm source tree is bundled in the container at /opt/brainstorm3.
+#
 # References:
-# - Brainstorm scripting tutorial: https://neuroimage.usc.edu/brainstorm/Tutorials/Scripting
-# - MathWorks compiled app execution: https://www.mathworks.com/help/compiler/package-and-distribute-matlab-functions.html
-# - Headless execution: https://www.commandmasters.com/commands/xvfb-run-linux/
+#   - BIDS Apps: https://bids-apps.neuroimaging.io/
+#   - Brainstorm scripting: https://neuroimage.usc.edu/brainstorm/Tutorials/Scripting
+# =============================================================================
 
-set -e
+set -euo pipefail
 
-# Export required environment variables for MATLAB Runtime
-export MCR_ROOT=${MCR_ROOT:-/opt/mcr/v914}
-export MCR_CACHE_ROOT=${MCR_CACHE_ROOT:-/tmp/mcr_cache}
-export LD_LIBRARY_PATH=${MCR_ROOT}/runtime/glnxa64:${MCR_ROOT}/bin/glnxa64:${MCR_ROOT}/sys/os/glnxa64:${MCR_ROOT}/sys/opengl/lib/glnxa64:${LD_LIBRARY_PATH}
-export BRAINSTORM_ROOT=${BRAINSTORM_ROOT:-/opt/brainstorm}
+# ─── Paths ───────────────────────────────────────────────────────────────────
+BST_DIR="${BST_DIR:-/opt/brainstorm3}"
+PIPELINE_DIR="${PIPELINE_DIR:-/opt/brainstorm-pipeline}"
+SCRIPTS_DIR="${PIPELINE_DIR}/scripts"
 
-# Ensure required directories exist and are writable
-mkdir -p /data /tmp/mcr_cache /scripts
-chmod 755 /data /tmp/mcr_cache /scripts 2>/dev/null || true
+# ─── Usage ───────────────────────────────────────────────────────────────────
+usage() {
+    cat << 'EOF'
+Brainstorm BIDS App — MEG/EEG Pipeline
 
-# Brainstorm executable path and directory
-BST_DIR="/opt/brainstorm3/bin/R2023a"
-BST_RUNNER="${BST_DIR}/brainstorm3.command"
+USAGE:
+  brainstorm-pipeline <bids_dir> <output_dir> participant [OPTIONS]
+  brainstorm-pipeline aggregate [OPTIONS]
 
-# Check if Brainstorm runner exists
-if [[ ! -f "${BST_RUNNER}" ]]; then
-    echo "ERROR: Brainstorm runner not found at ${BST_RUNNER}"
-    echo "Please ensure the Brainstorm compiled archive was properly installed."
-    exit 1
-fi
+PARTICIPANT MODE (per-subject processing):
+  Positional:
+    bids_dir       Path to BIDS dataset root (read-only)
+    output_dir     Path for pipeline outputs (.zip exports, logs)
+    participant    Analysis level (required literal)
 
-# Function to show usage
-show_usage() {
-    echo "Brainstorm Compiled Container"
-    echo "Runs compiled Brainstorm with MATLAB Runtime R2023a (9.14) in headless mode"
-    echo ""
-    echo "Usage patterns:"
-    echo "  Script mode (batch processing):"
-    echo "    docker run -v \$PWD/data:/data -v \$PWD/scripts:/scripts brainstorm-compiled:2023a -script /scripts/pipeline.m"
-    echo ""
-    echo "  Headless GUI mode (debugging):"
-    echo "    docker run -it -v \$PWD/data:/data brainstorm-compiled:2023a"
-    echo ""
-    echo "  With additional parameters:"
-    echo "    docker run -v \$PWD/data:/data brainstorm-compiled:2023a -script /scripts/job.m local"
-    echo ""
-    echo "Note: The 'local' argument is automatically added if not present to avoid database setup prompts"
-    echo ""
-    echo "Volume requirements:"
-    echo "  /data    - Mount your Brainstorm databases and project data"
-    echo "  /scripts - Mount your .m script files generated from Brainstorm GUI"
-    echo ""
-    echo "Script generation: Follow Brainstorm's 'Generate .m script' tutorial"
-    echo "Documentation: https://neuroimage.usc.edu/brainstorm/Tutorials/Scripting"
+  Required:
+    --participant-label LABEL   Subject label without 'sub-' prefix (e.g., 0002)
+    --module MODULE             Pipeline stop position: import|preprocess|source|timefreq
+
+  Optional:
+    --nvertices N               Cortex downsampling vertices (default: 15000)
+    --bst-db-dir PATH           Throwaway protocol DB location (default: $SLURM_TMPDIR/brainstorm_db or /tmp/brainstorm_db)
+    --bst-dir PATH              Override Brainstorm source tree (default: /opt/brainstorm3)
+
+AGGREGATE MODE (combine per-subject exports):
+  Required:
+    --zip-dir PATH              Directory containing sub-*_brainstorm.zip files
+    --protocol-name NAME        Name for the group protocol
+
+  Optional:
+    --output-zip PATH           Export group protocol to this .zip
+    --bst-db-dir PATH           Protocol database location
+
+EXAMPLES:
+  # Full pipeline for one subject
+  apptainer run brainstorm-pipeline.sif \
+      /data/omega /output participant \
+      --participant-label 0002 --module timefreq
+
+  # Import only
+  apptainer run brainstorm-pipeline.sif \
+      /data/omega /output participant \
+      --participant-label 0002 --module import
+
+  # Aggregate
+  apptainer run brainstorm-pipeline.sif \
+      aggregate --zip-dir /output --protocol-name OMEGA_Group
+
+  # SLURM array job (subject label from SLURM_ARRAY_TASK_ID)
+  apptainer run brainstorm-pipeline.sif \
+      /data/omega /output participant \
+      --participant-label ${SUBJECTS[$SLURM_ARRAY_TASK_ID]} --module timefreq
+EOF
 }
 
-# Handle help and no arguments
-if [[ $# -eq 0 ]] || [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
-    show_usage
-    exit 0
-fi
+# ─── Detect MATLAB ───────────────────────────────────────────────────────────
+find_matlab() {
+    # Check if matlab is already in PATH (from module load)
+    if command -v matlab &>/dev/null; then
+        MATLAB_BIN=$(command -v matlab)
+        echo "Found MATLAB: ${MATLAB_BIN}"
+        return 0
+    fi
 
-# Detect execution mode and prepare command
-if [[ "$1" == "-script" ]]; then
-    # Script mode: Run MATLAB script headlessly
-    # Pattern: brainstorm3.command <MATLABROOT> <script.m> <parameters>
-    echo "Running Brainstorm in script mode..."
-    if [[ -z "$2" ]]; then
-        echo "ERROR: -script requires a script file path"
-        echo "Example: -script /scripts/my_pipeline.m"
-        exit 1
-    fi
-    
-    script_file="$2"
-    if [[ ! -f "$script_file" ]]; then
-        echo "ERROR: Script file not found: $script_file"
-        echo "Ensure your script is mounted at /scripts and the path is correct"
-        exit 1
-    fi
-    
-    echo "Executing script: $script_file"
-    # Change to Brainstorm R2023a directory (matching your working setup)
-    cd /opt/brainstorm3/bin/R2023a
-    
-    # Correct Brainstorm pattern: ./brainstorm3.command <MATLABROOT> <script.m> <parameters>
-    shift  # Remove -script
-    
-    # Check if 'local' argument is already present, if not add it automatically
-    local_found=false
-    for arg in "$@"; do
-        if [[ "$arg" == "local" ]]; then
-            local_found=true
-            break
+    # Check common Alliance paths
+    local search_paths=(
+        "/cvmfs/restricted.computecanada.ca/easybuild/software/2023/x86-64-v3/Core/matlab/2023b.2/bin/matlab"
+        "/usr/local/MATLAB/R2023b/bin/matlab"
+        "/opt/matlab/R2023b/bin/matlab"
+    )
+    for p in "${search_paths[@]}"; do
+        if [[ -x "$p" ]]; then
+            MATLAB_BIN="$p"
+            echo "Found MATLAB at: ${MATLAB_BIN}"
+            return 0
         fi
     done
-    
-    if [[ "$local_found" == false ]]; then
-        echo "Adding 'local' argument to avoid database setup prompt"
-        set -- "$@" "local"
+
+    echo "ERROR: MATLAB not found. On Alliance HPC, run:"
+    echo "  module load matlab/2023b.2"
+    echo "before invoking the container."
+    return 1
+}
+
+# ─── Start virtual framebuffer ───────────────────────────────────────────────
+start_xvfb() {
+    if ! pgrep -x Xvfb &>/dev/null; then
+        Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
+        export DISPLAY=:99
+        sleep 1
     fi
-    
-    echo "Running: ./brainstorm3.command ${MCR_ROOT} $*"
-    # Handle first-time update prompt by answering 'yes' automatically
-    echo "yes" | xvfb-run -a ./brainstorm3.command "${MCR_ROOT}" "$@"
-    
-else
-    # Direct mode: Start Brainstorm GUI or with custom arguments
-    # Pattern: ./brainstorm3.command <MATLABROOT> [arguments]
-    echo "Running Brainstorm with arguments: $*"
-    
-    # Change to Brainstorm R2023a directory (matching your working setup)
-    cd /opt/brainstorm3/bin/R2023a
-    
-    # Check if 'local' argument is already present, if not add it automatically
-    local_found=false
-    for arg in "$@"; do
-        if [[ "$arg" == "local" ]]; then
-            local_found=true
-            break
-        fi
+}
+
+# ─── Build MATLAB command ────────────────────────────────────────────────────
+run_matlab() {
+    local matlab_code="$1"
+    start_xvfb
+    echo "─── MATLAB command ───"
+    echo "$matlab_code"
+    echo "───────────────────────"
+
+    "${MATLAB_BIN}" -nodisplay -nosplash -nodesktop -batch "$matlab_code"
+}
+
+# ─── Participant mode ────────────────────────────────────────────────────────
+run_participant() {
+    local bids_dir="$1"
+    local output_dir="$2"
+    shift 2  # remove bids_dir and output_dir
+    shift    # remove 'participant'
+
+    # Parse options
+    local participant_label=""
+    local module=""
+    local nvertices=15000
+    local bst_db_dir=""
+    local bst_dir_override=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --participant-label) participant_label="$2"; shift 2 ;;
+            --module)            module="$2"; shift 2 ;;
+            --nvertices)         nvertices="$2"; shift 2 ;;
+            --bst-db-dir)        bst_db_dir="$2"; shift 2 ;;
+            --bst-dir)           bst_dir_override="$2"; shift 2 ;;
+            *) echo "Unknown option: $1"; usage; exit 1 ;;
+        esac
     done
-    
-    if [[ "$local_found" == false ]]; then
-        echo "Adding 'local' argument to avoid database setup prompt"
-        set -- "$@" "local"
+
+    # Validate required arguments
+    if [[ -z "$participant_label" ]]; then
+        echo "ERROR: --participant-label is required"
+        usage
+        exit 1
     fi
-    
-    if [[ $# -eq 1 ]] && [[ "$1" == "local" ]]; then
-        # Only 'local' argument = start server mode with local database
-        echo "Running: ./brainstorm3.command ${MCR_ROOT} brainstorm server local"
-        echo "yes" | xvfb-run -a ./brainstorm3.command "${MCR_ROOT}" brainstorm server local
+    if [[ -z "$module" ]]; then
+        echo "ERROR: --module is required (import|preprocess|source|timefreq)"
+        usage
+        exit 1
+    fi
+    if [[ ! "$module" =~ ^(import|preprocess|source|timefreq)$ ]]; then
+        echo "ERROR: --module must be one of: import, preprocess, source, timefreq"
+        exit 1
+    fi
+
+    # Resolve paths
+    local use_bst_dir="${bst_dir_override:-${BST_DIR}}"
+
+    if [[ -z "$bst_db_dir" ]]; then
+        if [[ -n "${SLURM_TMPDIR:-}" ]]; then
+            bst_db_dir="${SLURM_TMPDIR}/brainstorm_db"
+        else
+            bst_db_dir="/tmp/brainstorm_db"
+        fi
+    fi
+
+    # Ensure output directory exists
+    mkdir -p "$output_dir" 2>/dev/null || true
+
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo " Brainstorm BIDS App — Participant Mode"
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo " Subject:     sub-${participant_label}"
+    echo " Module:      ${module}"
+    echo " BIDS dir:    ${bids_dir}"
+    echo " Output dir:  ${output_dir}"
+    echo " BstDir:      ${use_bst_dir}"
+    echo " BstDbDir:    ${bst_db_dir}"
+    echo " NVertices:   ${nvertices}"
+    echo "═══════════════════════════════════════════════════════════════════"
+
+    # Build MATLAB command
+    local matlab_code="
+addpath('${use_bst_dir}');
+addpath('${SCRIPTS_DIR}');
+bst_single_subject('${bids_dir}', '${output_dir}', '${participant_label}', '${module}', ...
+    'BstDir', '${use_bst_dir}', ...
+    'BstDbDir', '${bst_db_dir}', ...
+    'NVertices', ${nvertices});
+exit(0);
+"
+    run_matlab "$matlab_code"
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
+        echo ""
+        echo "Pipeline completed successfully for sub-${participant_label}."
+        echo "Output: ${output_dir}/sub-${participant_label}_brainstorm.zip"
     else
-        # Pass arguments directly to Brainstorm
-        echo "Running: ./brainstorm3.command ${MCR_ROOT} $*"
-        echo "yes" | xvfb-run -a ./brainstorm3.command "${MCR_ROOT}" "$@"
+        echo ""
+        echo "ERROR: Pipeline failed for sub-${participant_label} (exit code: ${exit_code})"
+        exit $exit_code
     fi
-fi
+}
+
+# ─── Aggregate mode ──────────────────────────────────────────────────────────
+run_aggregate() {
+    shift  # remove 'aggregate'
+
+    local zip_dir=""
+    local protocol_name=""
+    local output_zip=""
+    local bst_db_dir=""
+    local bst_dir_override=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --zip-dir)         zip_dir="$2"; shift 2 ;;
+            --protocol-name)   protocol_name="$2"; shift 2 ;;
+            --output-zip)      output_zip="$2"; shift 2 ;;
+            --bst-db-dir)      bst_db_dir="$2"; shift 2 ;;
+            --bst-dir)         bst_dir_override="$2"; shift 2 ;;
+            *) echo "Unknown option: $1"; usage; exit 1 ;;
+        esac
+    done
+
+    # Validate
+    if [[ -z "$zip_dir" ]]; then
+        echo "ERROR: --zip-dir is required for aggregate mode"
+        exit 1
+    fi
+    if [[ -z "$protocol_name" ]]; then
+        echo "ERROR: --protocol-name is required for aggregate mode"
+        exit 1
+    fi
+
+    local use_bst_dir="${bst_dir_override:-${BST_DIR}}"
+
+    if [[ -z "$bst_db_dir" ]]; then
+        if [[ -n "${SLURM_TMPDIR:-}" ]]; then
+            bst_db_dir="${SLURM_TMPDIR}/brainstorm_db"
+        else
+            bst_db_dir="/tmp/brainstorm_db"
+        fi
+    fi
+
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo " Brainstorm BIDS App — Aggregate Mode"
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo " Zip dir:       ${zip_dir}"
+    echo " Protocol:      ${protocol_name}"
+    echo " Output zip:    ${output_zip:-<none>}"
+    echo " BstDir:        ${use_bst_dir}"
+    echo " BstDbDir:      ${bst_db_dir}"
+    echo "═══════════════════════════════════════════════════════════════════"
+
+    # Build MATLAB command
+    local output_arg=""
+    if [[ -n "$output_zip" ]]; then
+        output_arg="'OutputZip', '${output_zip}', "
+    fi
+
+    local matlab_code="
+addpath('${use_bst_dir}');
+addpath('${SCRIPTS_DIR}');
+bst_aggregate_subjects('${zip_dir}', '${protocol_name}', ...
+    'BstDir', '${use_bst_dir}', ...
+    'BstDbDir', '${bst_db_dir}', ...
+    ${output_arg});
+exit(0);
+"
+    run_matlab "$matlab_code"
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
+        echo ""
+        echo "Aggregation completed: ${protocol_name}"
+    else
+        echo "ERROR: Aggregation failed (exit code: ${exit_code})"
+        exit $exit_code
+    fi
+}
+
+# ─── Main dispatch ───────────────────────────────────────────────────────────
+main() {
+    if [[ $# -eq 0 ]] || [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
+        usage
+        exit 0
+    fi
+
+    # Find MATLAB before doing anything else
+    find_matlab || exit 1
+
+    # Dispatch based on mode
+    # BIDS App: <bids_dir> <output_dir> participant ...
+    # Aggregate: aggregate ...
+    if [[ "$1" == "aggregate" ]]; then
+        run_aggregate "$@"
+    elif [[ $# -ge 3 ]] && [[ "$3" == "participant" ]]; then
+        run_participant "$@"
+    else
+        echo "ERROR: Unrecognized command. Expected 'participant' or 'aggregate' mode."
+        echo ""
+        usage
+        exit 1
+    fi
+}
+
+main "$@"

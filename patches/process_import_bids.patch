@@ -1,0 +1,29 @@
+--- a/toolbox/process/functions/process_import_bids.m
++++ b/toolbox/process/functions/process_import_bids.m
+@@ -1229,8 +1229,8 @@
+         for iNoise = 1:length(uniqueEmptyRoom)
+             % Find the link imported in the database for this emptyroom recordings
+             origEmptyFile = fullfile(BidsDir, uniqueEmptyRoom{iNoise});
+-            iRaw = find(file_compare(origEmptyFile, OrigFiles));
+-            if isempty(iRaw)
++            iRawEmpty = find(file_compare(origEmptyFile, OrigFiles));
++            if isempty(iRawEmpty)
+                 continue;
+             end
+             % Compute the noise covariance
+@@ -1247,7 +1247,8 @@
+             % Find the studies matched with these noise recordings
+             iOrigDest = find(strcmp(EmptyRoomMatch(:,2), uniqueEmptyRoom{iNoise}));
+             % Copy noisecov to all the matched folders
+-            for iDest = iOrigDest
++            if ~isempty(sFilesEmpty) && isstruct(sFilesEmpty)
++            for iDest = iOrigDest'
+                 % Find study index where the file was imported
+                 [sStudyDest, iStudyDest] = bst_get('DataFile', EmptyRoomMatch{iDest,1});
+                 if isempty(iStudyDest)
+@@ -1256,6 +1257,7 @@
+                 db_set_noisecov(sFilesEmpty.iStudy, iStudyDest, 0, 1);
+             end
++            end
+         end
+     end

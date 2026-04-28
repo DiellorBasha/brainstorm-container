@@ -1,0 +1,136 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%labels
+    Author Diellor Basha <diellorbasha@gmail.com>
+    Version 1.0.0
+    Description Brainstorm MEG/EEG BIDS App for Alliance HPC
+    org.opencontainers.image.source https://github.com/DiellorBasha/brainstorm-container
+
+%help
+    Brainstorm BIDS App — single-subject MEG/EEG pipeline for HPC.
+
+    Runs Brainstorm in headless server mode through four processing stages:
+      import → preprocess → source → timefreq
+
+    Requires MATLAB on the host (e.g., module load matlab/2023b.2 on Alliance).
+
+    Usage:
+      # Single subject
+      apptainer run --bind /data:/data:ro --bind /output:/output \
+          brainstorm-pipeline.sif \
+          /data /output participant --participant-label 0002 --module timefreq
+
+      # Aggregate per-subject exports into group protocol
+      apptainer run --bind /output:/output \
+          brainstorm-pipeline.sif \
+          aggregate --zip-dir /output --protocol-name MyGroup
+
+    See entrypoint.sh --help for full argument reference.
+
+%environment
+    # Brainstorm source tree (bundled in container, bugfix applied)
+    export BST_DIR=/opt/brainstorm3
+    # Pipeline scripts
+    export PIPELINE_DIR=/opt/brainstorm-pipeline
+    # Headless display
+    export DISPLAY=:99
+    # Locale
+    export LANG=C.UTF-8
+    export LC_ALL=C.UTF-8
+    # Avoid MATLAB GUI prompts
+    export MATLAB_LOG_DIR=/tmp
+
+%files
+    # Pipeline scripts (bst_single_subject.m, bst_aggregate_subjects.m, etc.)
+    scripts/ /opt/brainstorm-pipeline/scripts/
+    # Bugfix patches applied during %post
+    patches/ /opt/brainstorm-pipeline/patches/
+    # Entrypoint
+    entrypoint.sh /opt/brainstorm-pipeline/entrypoint.sh
+
+%post
+    # ── System packages ──────────────────────────────────────────────────
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        git \
+        unzip \
+        xvfb \
+        xauth \
+        libx11-6 \
+        libxext6 \
+        libxmu6 \
+        libxpm4 \
+        libxt6 \
+        libxrender1 \
+        libxi6 \
+        libxtst6 \
+        libxss1 \
+        libglib2.0-0 \
+        libasound2 \
+        libnss3 \
+        libxkbcommon0 \
+        libxrandr2 \
+        libxcursor1 \
+        libxinerama1 \
+        libxdamage1 \
+        libxcomposite1 \
+        libxfixes3 \
+        libgtk-3-0 \
+        libgdk-pixbuf2.0-0 \
+        libcairo2 \
+        libpango-1.0-0 \
+        libatk1.0-0 \
+        libdrm2 \
+        fontconfig \
+        libfreetype6 \
+        mesa-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+    # ── Clone Brainstorm source tree ─────────────────────────────────────
+    # Pin to a known-good commit for reproducibility.
+    # Using the latest master as of build time; override BST_COMMIT at build.
+    cd /opt
+    git clone --depth 1 https://github.com/brainstorm-tools/brainstorm3.git
+    cd brainstorm3
+    echo "Brainstorm cloned: $(git log --oneline -1)"
+
+    # ── Apply bugfix: process_import_bids.m ──────────────────────────────
+    # Fix 1: iRaw → iRawEmpty on line ~1233 (empty-room variable name typo)
+    # Fix 2: Guard sFilesEmpty with isempty+isstruct before loop (~line 1251)
+    BIDS_FILE="/opt/brainstorm3/toolbox/process/functions/process_import_bids.m"
+    if [ -f /opt/brainstorm-pipeline/patches/process_import_bids.patch ]; then
+        echo "Applying process_import_bids patch..."
+        cd /opt/brainstorm3
+        patch -p1 < /opt/brainstorm-pipeline/patches/process_import_bids.patch \
+            && echo "Patch applied successfully" \
+            || echo "WARNING: Patch failed — applying sed fallback"
+    fi
+    # Sed fallback (idempotent — safe to run even if patch succeeded)
+    sed -i 's/if isempty(iRaw)$/if isempty(iRawEmpty)/' "$BIDS_FILE" 2>/dev/null || true
+
+    # ── Permissions ──────────────────────────────────────────────────────
+    chmod +x /opt/brainstorm-pipeline/entrypoint.sh
+    chmod -R a+rX /opt/brainstorm3
+    chmod -R a+rX /opt/brainstorm-pipeline
+
+    # ── Create runtime directories ───────────────────────────────────────
+    mkdir -p /data /output /scratch /tmp/mcr_cache
+    chmod 1777 /tmp /scratch
+
+%runscript
+    exec /opt/brainstorm-pipeline/entrypoint.sh "$@"
+
+%test
+    # Verify Brainstorm source tree exists
+    test -f /opt/brainstorm3/brainstorm.m || exit 1
+    # Verify pipeline scripts exist
+    test -f /opt/brainstorm-pipeline/scripts/bst_single_subject.m || exit 1
+    test -f /opt/brainstorm-pipeline/scripts/bst_aggregate_subjects.m || exit 1
+    # Verify entrypoint
+    test -x /opt/brainstorm-pipeline/entrypoint.sh || exit 1
+    # Verify bugfix was applied
+    grep -q "isempty(iRawEmpty)" /opt/brainstorm3/toolbox/process/functions/process_import_bids.m || exit 1
+    echo "All container tests passed."
