@@ -109,7 +109,13 @@ From: ubuntu:22.04
             || echo "WARNING: Patch failed — applying sed fallback"
     fi
     # Sed fallback (idempotent — safe to run even if patch succeeded)
-    sed -i 's/if isempty(iRaw)$/if isempty(iRawEmpty)/' "$BIDS_FILE" 2>/dev/null || true
+    # Fix 1: Variable name on the check line (iRaw → iRawEmpty)
+    sed -i 's/if isempty(iRaw)/if isempty(iRawEmpty)/' "$BIDS_FILE" 2>/dev/null || true
+    # Fix 2: Variable name on the RawFiles usage line
+    sed -i 's/RawFiles{iRaw}/RawFiles{iRawEmpty}/' "$BIDS_FILE" 2>/dev/null || true
+    # Verify
+    echo "Bugfix verification:"
+    grep -n "iRawEmpty" "$BIDS_FILE" | head -5
 
     # ── Permissions ──────────────────────────────────────────────────────
     chmod +x /opt/brainstorm-pipeline/entrypoint.sh
@@ -131,6 +137,6 @@ From: ubuntu:22.04
     test -f /opt/brainstorm-pipeline/scripts/bst_aggregate_subjects.m || exit 1
     # Verify entrypoint
     test -x /opt/brainstorm-pipeline/entrypoint.sh || exit 1
-    # Verify bugfix was applied
-    grep -q "isempty(iRawEmpty)" /opt/brainstorm3/toolbox/process/functions/process_import_bids.m || exit 1
+    # Verify bugfix was applied (the if-check line should reference iRawEmpty)
+    grep -q "if isempty(iRawEmpty)" /opt/brainstorm3/toolbox/process/functions/process_import_bids.m || exit 1
     echo "All container tests passed."
