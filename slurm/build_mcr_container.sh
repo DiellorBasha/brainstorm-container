@@ -89,7 +89,7 @@ export APPTAINER_TMPDIR="${SLURM_TMPDIR}/apptainer_tmp"
 mkdir -p "${APPTAINER_TMPDIR}"
 
 cd "${REPO_DIR}"
-apptainer build --fakeroot --notest "${OUTPUT_SIF}" brainstorm-pipeline-mcr.def
+apptainer build --fakeroot --notest --force "${OUTPUT_SIF}" brainstorm-pipeline-mcr.def
 BUILD_EXIT=$?
 
 if [[ $BUILD_EXIT -eq 0 ]]; then
