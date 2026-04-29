@@ -65,6 +65,16 @@ mkdir_safe(OutputDir);
 addpath(BstDir);
 addpath(ScriptsDir);
 
+% Add brainstorm.jar to Java classpath (needed for mcc to resolve Java imports
+% like org.brainstorm.tree.BstNode used in Brainstorm's tree functions)
+BstJar = fullfile(BstDir, 'java', 'brainstorm.jar');
+if exist(BstJar, 'file')
+    javaaddpath(BstJar);
+    fprintf('Added brainstorm.jar to Java classpath: %s\n', BstJar);
+else
+    warning('brainstorm.jar not found at %s — Java imports may fail', BstJar);
+end
+
 %% ========================================================================
 %% Compile bst_single_subject
 %% ========================================================================
