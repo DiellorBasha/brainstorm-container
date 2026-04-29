@@ -105,6 +105,7 @@ From: ubuntu:22.04
         fontconfig \
         libfreetype6 \
         mesa-utils \
+        patchelf \
     && rm -rf /var/lib/apt/lists/*
 
     # ── Install MCR R2023b ───────────────────────────────────────────────
@@ -173,6 +174,16 @@ From: ubuntu:22.04
     sed -i 's/RawFiles{iRaw}/RawFiles{iRawEmpty}/' "$BIDS_FILE" 2>/dev/null || true
     echo "Bugfix verification:"
     grep -n "iRawEmpty" "$BIDS_FILE" | head -5
+
+    # ── Fix ELF interpreter ──────────────────────────────────────────────
+    # Binaries compiled on Alliance HPC have a /cvmfs/... dynamic linker path
+    # that doesn't exist inside the container. Patch to standard Ubuntu path.
+    for bin in /opt/brainstorm-pipeline/compiled/bst_*_standalone; do
+        if [ -f "$bin" ]; then
+            echo "Patching ELF interpreter: $bin"
+            patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$bin"
+        fi
+    done
 
     # ── Permissions ──────────────────────────────────────────────────────
     chmod +x /opt/brainstorm-pipeline/entrypoint-mcr.sh
