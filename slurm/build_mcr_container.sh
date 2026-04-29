@@ -53,6 +53,7 @@ fi
 echo ""
 echo "Phase 1b: Compiling standalone binaries..."
 module load matlab/2023b.2
+module load apptainer/1.3.5
 
 if [[ -f "${STAGING_DIR}/bst_single_subject_standalone" ]]; then
     echo "  Compiled binaries already exist. Skipping compilation."
