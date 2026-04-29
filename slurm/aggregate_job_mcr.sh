@@ -23,6 +23,8 @@ OUTPUT_DIR="/scratch/dbasha/brainstorm_pipeline/derivatives"
 OUTPUT_ZIP="/scratch/dbasha/brainstorm_pipeline/derivatives/${PROTOCOL_NAME}.zip"
 CONTAINER="/project/rrg-baillet-ab/dbasha/workspace/software/containers/brainstorm-pipeline-mcr.sif"
 
+module load apptainer/1.3.5
+
 # ─── Run ─────────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════════════"
 echo " Brainstorm Aggregate Job (MCR Version)"

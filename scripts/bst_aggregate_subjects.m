@@ -82,9 +82,13 @@ end
 fprintf('Found %d subject .zip files in %s\n', length(zipFiles), ZipDir);
 
 %% ===== Start Brainstorm =====
-% Add Brainstorm to path
+% Add Brainstorm to path (skip in compiled mode — toolbox is in CTF)
 if ~isempty(opts.BstDir)
-    addpath(opts.BstDir);
+    if ~isdeployed
+        addpath(opts.BstDir);
+    else
+        fprintf('Compiled mode — skipping addpath. BstDir: %s\n', opts.BstDir);
+    end
 else
     % Try to auto-detect from current path
     if exist('brainstorm', 'file') ~= 2

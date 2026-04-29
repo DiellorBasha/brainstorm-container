@@ -115,8 +115,14 @@ if isempty(BstDir)
         error('BstDir not specified and brainstorm3 not on MATLAB path');
     end
 else
-    addpath(BstDir);
-    fprintf('Added BstDir to path: %s\n', BstDir);
+    % In compiled mode, addpath is forbidden — the toolbox is frozen in
+    % the CTF archive. BstDir is only needed for templates/defaults.
+    if ~isdeployed
+        addpath(BstDir);
+        fprintf('Added BstDir to path: %s\n', BstDir);
+    else
+        fprintf('Compiled mode — skipping addpath. BstDir for templates: %s\n', BstDir);
+    end
 end
 
 % Brainstorm DB directory (throwaway — destroyed after export)
