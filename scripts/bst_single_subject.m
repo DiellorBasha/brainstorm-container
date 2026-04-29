@@ -62,10 +62,24 @@ addRequired(p, 'SubjectLabel', @ischar);
 addRequired(p, 'Module', @(x) ismember(x, {'import','preprocess','source','timefreq'}));
 addParameter(p, 'BstDir', '', @ischar);
 addParameter(p, 'BstDbDir', '', @ischar);
-addParameter(p, 'NVertices', 15000, @isnumeric);
+% In compiled mode (mcc), all CLI arguments arrive as char.
+% Relax the validator so inputParser accepts either type, then convert below.
+if isdeployed
+    addParameter(p, 'NVertices', 15000, @(x) isnumeric(x) || ischar(x));
+else
+    addParameter(p, 'NVertices', 15000, @isnumeric);
+end
 parse(p, BidsDir, OutputDir, SubjectLabel, Module, varargin{:});
 
 opts = p.Results;
+
+% Convert char → numeric for compiled-mode string arguments
+if ischar(opts.NVertices)
+    opts.NVertices = str2double(opts.NVertices);
+    if isnan(opts.NVertices)
+        error('NVertices must be a valid number, got: %s', p.Results.NVertices);
+    end
+end
 SubjectName = ['sub-' opts.SubjectLabel];
 ProtocolName = ['nsp_' SubjectName];
 
